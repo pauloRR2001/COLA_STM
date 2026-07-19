@@ -216,6 +216,44 @@ def main():
     successful = [result for result in results if result.success]
     failed = [result for result in results if not result.success]
 
+    spacecraft_cases = []
+    for result in results:
+        spacecraft = create_spacecraft(
+            f"Recovery start {result.recovery_start_h:.1f} h"
+        )
+        spacecraft["orbit"].update(
+            {
+                "minimum_allowed_altitude_km": minimum_allowed_altitude_km,
+                "minimum_altitude_km": result.minimum_altitude_km,
+                "final_altitude_km": result.final_altitude_km,
+                "final_separation_from_nominal_km": result.final_separation_km,
+            }
+        )
+        spacecraft["vehicle"].update(
+            {
+                "mass": mass_kg,
+                "cd": cd,
+                "nominal_drag_area_m2": area_ram_m2,
+                "tumbling_drag_area_m2": area_tumble_m2,
+            }
+        )
+        spacecraft["operations"].update(
+            {
+                "recovery_start_h": result.recovery_start_h,
+                "recovery_complete_h": result.recovery_complete_h,
+                "recovered": result.success,
+                "mission_lost": not result.success,
+                "success": result.success,
+            }
+        )
+        spacecraft_cases.append(spacecraft)
+
+    recovery_study = {
+        "cases": spacecraft_cases,
+        "minimum_allowed_altitude_km": minimum_allowed_altitude_km,
+        "recovery_start_hours": recovery_start_hours,
+    }
+
     print("Challenge 3, Part 3")
     print("-------------------")
     print(f"Minimum permitted altitude: {minimum_allowed_altitude_km:.1f} km")
@@ -223,6 +261,7 @@ def main():
 
     if successful:
         latest_safe = max(successful, key=lambda result: result.recovery_start_h)
+        recovery_study["latest_safe"] = spacecraft_cases[results.index(latest_safe)]
         print(
             "Latest safe recovery start: "
             f"{latest_safe.recovery_start_h:.1f} h after epoch"
@@ -240,6 +279,7 @@ def main():
 
     if failed:
         first_failed = min(failed, key=lambda result: result.recovery_start_h)
+        recovery_study["first_failed"] = spacecraft_cases[results.index(first_failed)]
         print(
             "First failed recovery start: "
             f"{first_failed.recovery_start_h:.1f} h after epoch"
@@ -337,6 +377,8 @@ def main():
         plt.tight_layout()
 
     plt.show()
+
+    return recovery_study
 
 
 if __name__ == "__main__":

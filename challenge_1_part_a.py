@@ -1,3 +1,4 @@
+from functions import *
 """Challenge 1, Part A: RAAN drift and campaign delta-v trade.
 
 Compares a naturally decaying drift orbit (Strategy A) with altitude
@@ -56,7 +57,13 @@ def hohmann_delta_v_mps(initial_altitude_km_value: float, final_altitude_km_valu
     return 1000.0 * (abs(vt1 - v1) + abs(v2 - vt2))
 
 
-def main() -> None:
+def main() -> dict:
+    conjunction = create_conjunction()
+    primary = conjunction["primary"]
+    secondary = conjunction["secondary"]
+    collision = conjunction["collision"]
+    maneuver = conjunction["maneuver"]
+
     time_days = np.arange(drift_duration_days + 1, dtype=float)
 
     # Strategy A follows the specified decay law, clipped at the stated final altitude.
@@ -82,6 +89,54 @@ def main() -> None:
     )
     impulsive_raise_b_mps = hohmann_delta_v_mps(
         initial_altitude_km, target_altitude_km
+    )
+
+    primary["id"] = "Strategy A"
+    primary["orbit"].update(
+        {
+            "time_days": time_days,
+            "altitude_km": altitude_a_km,
+            "raan_deg": raan_a_deg,
+            "raan_rate_deg_day": rate_a_deg_day,
+        }
+    )
+
+    secondary["id"] = "Strategy B"
+    secondary["orbit"].update(
+        {
+            "time_days": time_days,
+            "altitude_km": altitude_b_km,
+            "raan_deg": raan_b_deg,
+            "raan_rate_deg_day": rate_b_deg_day,
+        }
+    )
+
+    collision.update(
+        {
+            "raan_separation_deg": raan_separation_deg,
+            "terminal_raan_separation_deg": raan_separation_deg[-1],
+            "warning": False,
+            "collision": False,
+            "maneuver_required": False,
+        }
+    )
+
+    maneuver.update(
+        {
+            "delta_v": {
+                "strategy_a_drift_mps": strategy_a_drift_delta_v_mps,
+                "strategy_a_raise_mps": strategy_a_raise_delta_v_mps,
+                "strategy_a_total_mps": strategy_a_total_delta_v_mps,
+                "strategy_b_drift_mps": strategy_b_drift_delta_v_mps,
+                "strategy_b_raise_mps": strategy_b_raise_delta_v_mps,
+                "strategy_b_total_mps": strategy_b_total_delta_v_mps,
+                "strategy_a_savings_mps": strategy_a_delta_v_savings_mps,
+                "reference_impulsive_raise_a_mps": impulsive_raise_a_mps,
+                "reference_impulsive_raise_b_mps": impulsive_raise_b_mps,
+            },
+            "magnitude": strategy_a_total_delta_v_mps,
+            "executed": False,
+        }
     )
 
     print("Challenge 1 Part A — RAAN drift and campaign trade")
@@ -148,6 +203,8 @@ def main() -> None:
     plt.grid(True, axis="y")
 
     plt.show()
+
+    return conjunction
 
 
 if __name__ == "__main__":

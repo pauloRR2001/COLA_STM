@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from constants import earth_radius_km, mu_earth_km3_s2, seconds_per_day, target_altitude_km
+from functions import *
 
 
 NUMBER_OF_SATELLITES = 4
@@ -56,9 +57,12 @@ def wrap_degrees(angle_deg: np.ndarray | float) -> np.ndarray | float:
     return np.mod(angle_deg, 360.0)
 
 
-def main() -> None:
+def main() -> list[dict]:
+    conjunctions = [create_conjunction() for _ in range(NUMBER_OF_SATELLITES)]
+
     operational_radius_km = earth_radius_km + target_altitude_km
     operational_mean_motion_rad_s = float(mean_motion_rad_s(operational_radius_km))
+    operational_period_days = 2.0 * np.pi / operational_mean_motion_rad_s / seconds_per_day
     phasing_duration_seconds = PHASING_DURATION_DAYS * seconds_per_day
 
     satellite_indices = np.arange(NUMBER_OF_SATELLITES)
@@ -117,6 +121,55 @@ def main() -> None:
     slot_error_deg = (
         (final_offsets_deg - target_offsets_deg + 180.0) % 360.0 - 180.0
     )
+
+    for satellite_index, conjunction in enumerate(conjunctions):
+        primary = conjunction["primary"]
+        secondary = conjunction["secondary"]
+        collision = conjunction["collision"]
+        maneuver = conjunction["maneuver"]
+
+        primary["id"] = "Reference"
+        primary["orbit"].update(
+            {
+                "radius_km": operational_radius_km,
+                "altitude_km": target_altitude_km,
+                "mean_motion_rad_s": operational_mean_motion_rad_s,
+                "period_days": operational_period_days,
+            }
+        )
+
+        secondary["id"] = f"Satellite {satellite_index}"
+        secondary["orbit"].update(
+            {
+                "time_days": times_days,
+                "radius_km": phasing_radius_km[satellite_index],
+                "altitude_km": altitude_history_km[satellite_index],
+                "phasing_altitude_km": phasing_altitude_km[satellite_index],
+                "mean_anomaly_rad": mean_anomaly_rad[satellite_index],
+                "relative_phase_deg": relative_phase_deg[satellite_index],
+                "target_slot_deg": target_offsets_deg[satellite_index],
+                "final_slot_deg": final_offsets_deg[satellite_index],
+                "slot_error_deg": slot_error_deg[satellite_index],
+            }
+        )
+
+        collision.update(
+            {
+                "slot_error_deg": slot_error_deg[satellite_index],
+                "warning": False,
+                "collision": False,
+                "maneuver_required": False,
+            }
+        )
+
+        maneuver.update(
+            {
+                "epoch": 0.0,
+                "delta_v": round_trip_delta_v_mps[satellite_index],
+                "magnitude": round_trip_delta_v_mps[satellite_index],
+                "executed": True,
+            }
+        )
 
     print("Challenge 1 Part B — Intra-plane slotting")
     print(f"Operational altitude:  {target_altitude_km:.3f} km")
@@ -200,6 +253,8 @@ def main() -> None:
     plt.grid(True)
 
     plt.show()
+
+    return conjunctions
 
 
 if __name__ == "__main__":

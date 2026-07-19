@@ -219,6 +219,59 @@ def main():
     nominal = results["Nominal"]
     nominal_final_position = nominal.states[-1, :3]
 
+    spacecraft_cases = {}
+    for label, result in results.items():
+        altitude = np.linalg.norm(result.states[:, :3], axis=1) - earth_radius_km
+        final_displacement_km = np.linalg.norm(
+            result.states[-1, :3] - nominal_final_position
+        )
+        spacecraft = create_spacecraft(label)
+
+        spacecraft["orbit"].update(
+            {
+                "r": result.states[-1, :3],
+                "v": result.states[-1, 3:6],
+                "state_history_km_km_s_quat_rad_s": result.states,
+                "altitude_history_km": altitude,
+                "minimum_altitude_km": np.min(altitude),
+                "final_altitude_km": altitude[-1],
+                "final_displacement_from_nominal_km": final_displacement_km,
+                "semimajor_axis_history_km": semimajor_axis_km(result.states),
+            }
+        )
+        spacecraft["attitude"].update(
+            {
+                "q": result.states[-1, 6:10],
+                "omega": result.states[-1, 10:13],
+                "quaternion_history": result.states[:, 6:10],
+                "angular_rate_history_rad_s": result.states[:, 10:13],
+            }
+        )
+        spacecraft["vehicle"].update(
+            {
+                "mass": mass_kg,
+                "cd": cd,
+                "drag_area": result.drag_areas_m2[-1],
+                "drag_area_history_m2": result.drag_areas_m2,
+                "density_history_kg_m3": result.densities_kg_m3,
+                "nominal_drag_area_m2": area_ram_m2,
+                "tumbling_drag_area_m2": area_tumble_m2,
+            }
+        )
+        spacecraft["operations"].update(
+            {
+                "state": result.operational_states[-1],
+                "state_history": result.operational_states,
+                "recovering": result.operational_states[-1] == SpacecraftState.RECOVERY,
+                "recovered": result.operational_states[-1] == SpacecraftState.RECOVERED,
+                "mission_lost": result.operational_states[-1]
+                == SpacecraftState.MISSION_LOSS,
+                "time_history_s": result.times_s,
+                "time_history_h": result.times_s / 3600.0,
+            }
+        )
+        spacecraft_cases[label] = spacecraft
+
     print("Challenge 3, Part 2")
     print("-------------------")
     print(f"Propagation duration: {nominal.times_s[-1] / 86400.0:.1f} days")
@@ -304,6 +357,8 @@ def main():
     plt.tight_layout()
 
     plt.show()
+
+    return spacecraft_cases
 
 
 if __name__ == "__main__":

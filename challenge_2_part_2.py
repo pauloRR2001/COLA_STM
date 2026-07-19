@@ -47,6 +47,7 @@ from functions.cola import (
     two_body_acceleration,
     write_json,
 )
+from functions.models import create_conjunction
 
 
 def covariance(position_sigma_km, velocity_sigma_km_s):
@@ -108,6 +109,12 @@ def drag_model(area_schedule):
 
 
 def main():
+    conjunction = create_conjunction()
+    primary = conjunction["primary"]
+    secondary_spacecraft = conjunction["secondary"]
+    collision = conjunction["collision"]
+    maneuver = conjunction["maneuver"]
+
     gravity = two_body_acceleration(mu_earth_km3_s2)
 
     primary_tca, secondary_tca = create_synthetic_encounter(
@@ -147,6 +154,31 @@ def main():
     )
     primary_initial = primary_backward.states[-1]
     secondary_initial = secondary_backward.states[-1]
+
+    primary["orbit"].update(
+        {
+            "r": primary_initial[:3],
+            "v": primary_initial[3:],
+            "state_eci_km_km_s": primary_initial,
+            "covariance": primary_covariance,
+        }
+    )
+    primary["vehicle"].update(
+        {
+            "mass": mass_kg,
+            "cd": cd,
+            "drag_area": area_ram_m2,
+        }
+    )
+
+    secondary_spacecraft["orbit"].update(
+        {
+            "r": secondary_initial[:3],
+            "v": secondary_initial[3:],
+            "state_eci_km_km_s": secondary_initial,
+            "covariance": secondary_covariance,
+        }
+    )
 
     # Continue beyond TCA to show that the vehicle returns to nominal area.
     end_time_seconds = nominal_tca_seconds + 12.0 * 3600.0
@@ -259,6 +291,82 @@ def main():
     nominal_speed_km_s = np.linalg.norm(primary_nominal.states[nominal.index, 3:])
     equivalent_timing_shift_seconds = (
         displacement_at_nominal_tca_rtn[1] / nominal_speed_km_s
+    )
+
+    primary["orbit"].update(
+        {
+            "nominal": primary_nominal,
+            "maneuvered": primary_high_drag,
+            "state_at_tca_eci_km_km_s": primary_nominal.states[nominal.index],
+            "maneuvered_state_at_tca_eci_km_km_s": primary_high_drag.states[
+                high_drag_result.index
+            ],
+        }
+    )
+    primary["vehicle"]["drag_area"] = area_ram_m2
+    primary["vehicle"]["high_drag_area"] = area_max_m2
+
+    secondary_spacecraft["orbit"].update(
+        {
+            "propagation": secondary,
+            "state_at_tca_eci_km_km_s": secondary.states[nominal.index],
+        }
+    )
+
+    collision.update(
+        {
+            "tca": nominal.tca_seconds,
+            "distance": nominal.miss_distance_km,
+            "probability": nominal.collision_probability,
+            "warning": nominal.collision_probability >= collision_probability_threshold,
+            "collision": nominal.miss_distance_km <= hard_body_radius_km,
+            "maneuver_required": (
+                nominal.collision_probability >= collision_probability_threshold
+            ),
+            "threshold": collision_probability_threshold,
+            "hard_body_radius_km": hard_body_radius_km,
+            "relative_position_eci_km": nominal.relative_position_eci_km,
+            "relative_velocity_eci_km_s": nominal.relative_velocity_eci_km_s,
+            "relative_position_rtn_km": nominal.relative_position_rtn_km,
+            "relative_velocity_rtn_km_s": nominal.relative_velocity_rtn_km_s,
+            "combined_position_covariance_rtn_km2": (
+                nominal.combined_position_covariance_rtn_km2
+            ),
+            "post_maneuver_tca": high_drag_result.tca_seconds,
+            "post_maneuver_distance": high_drag_result.miss_distance_km,
+            "post_maneuver_probability": high_drag_result.collision_probability,
+            "post_maneuver_relative_position_rtn_km": (
+                high_drag_result.relative_position_rtn_km
+            ),
+            "post_maneuver_relative_velocity_rtn_km_s": (
+                high_drag_result.relative_velocity_rtn_km_s
+            ),
+            "tested_lead_times_hours": tested_leads,
+            "tested_probabilities": tested_probabilities,
+            "tested_miss_distances_m": tested_miss_distances_m,
+        }
+    )
+
+    maneuver.update(
+        {
+            "epoch": float(high_drag_start),
+            "type": "DIFFERENTIAL_DRAG",
+            "nominal_area_m2": area_ram_m2,
+            "high_drag_area_m2": area_max_m2,
+            "lead_time_hours": float(lead_hours),
+            "duration_seconds": high_drag_duration_seconds,
+            "start_seconds_from_epoch": float(high_drag_start),
+            "stop_seconds_from_epoch": float(high_drag_stop),
+            "along_track_displacement_at_nominal_tca_m": float(
+                along_track_displacement_m
+            ),
+            "equivalent_timing_shift_seconds": float(
+                equivalent_timing_shift_seconds
+            ),
+            "delta_v": None,
+            "magnitude": None,
+            "executed": False,
+        }
     )
 
     payload = {
@@ -469,6 +577,8 @@ def main():
     plt.legend()
 
     plt.show()
+
+    return conjunction
 
 
 if __name__ == "__main__":

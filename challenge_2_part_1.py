@@ -36,6 +36,7 @@ from functions.cola import (
     two_body_acceleration,
     write_json,
 )
+from functions.models import create_conjunction
 
 
 def thrust_model(burn_windows):
@@ -58,6 +59,12 @@ def covariance(position_sigma_km, velocity_sigma_km_s):
 
 
 def main():
+    conjunction = create_conjunction()
+    primary = conjunction["primary"]
+    secondary_spacecraft = conjunction["secondary"]
+    collision = conjunction["collision"]
+    maneuver = conjunction["maneuver"]
+
     gravity = two_body_acceleration(mu_earth_km3_s2)
     primary_tca, secondary_tca = create_synthetic_encounter(
         mu_earth_km3_s2,
@@ -94,6 +101,29 @@ def main():
     )
     primary_initial = primary_backward.states[-1]
     secondary_initial = secondary_backward.states[-1]
+
+    primary["orbit"].update(
+        {
+            "r": primary_initial[:3],
+            "v": primary_initial[3:],
+            "state_eci_km_km_s": primary_initial,
+            "covariance": primary_covariance,
+        }
+    )
+    primary["vehicle"].update(
+        {
+            "mass": mass_kg,
+        }
+    )
+
+    secondary_spacecraft["orbit"].update(
+        {
+            "r": secondary_initial[:3],
+            "v": secondary_initial[3:],
+            "state_eci_km_km_s": secondary_initial,
+            "covariance": secondary_covariance,
+        }
+    )
 
     end_time_seconds = (
         nominal_tca_seconds
@@ -184,6 +214,74 @@ def main():
 
     lead_hours, windows, primary_maneuvered, maneuvered = selected
     delta_v_mps = thrust_n / mass_kg * avoidance_burn_duration_seconds
+
+    primary["orbit"].update(
+        {
+            "nominal": primary_nominal,
+            "maneuvered": primary_maneuvered,
+            "state_at_tca_eci_km_km_s": primary_nominal.states[nominal.index],
+            "maneuvered_state_at_tca_eci_km_km_s": primary_maneuvered.states[
+                maneuvered.index
+            ],
+        }
+    )
+    secondary_spacecraft["orbit"].update(
+        {
+            "propagation": secondary,
+            "state_at_tca_eci_km_km_s": secondary.states[nominal.index],
+        }
+    )
+
+    collision.update(
+        {
+            "tca": nominal.tca_seconds,
+            "distance": nominal.miss_distance_km,
+            "probability": nominal.collision_probability,
+            "warning": nominal.collision_probability >= collision_probability_threshold,
+            "collision": nominal.miss_distance_km <= hard_body_radius_km,
+            "maneuver_required": (
+                nominal.collision_probability >= collision_probability_threshold
+            ),
+            "threshold": collision_probability_threshold,
+            "hard_body_radius_km": hard_body_radius_km,
+            "relative_position_eci_km": nominal.relative_position_eci_km,
+            "relative_velocity_eci_km_s": nominal.relative_velocity_eci_km_s,
+            "relative_position_rtn_km": nominal.relative_position_rtn_km,
+            "relative_velocity_rtn_km_s": nominal.relative_velocity_rtn_km_s,
+            "combined_position_covariance_rtn_km2": (
+                nominal.combined_position_covariance_rtn_km2
+            ),
+            "post_maneuver_tca": maneuvered.tca_seconds,
+            "post_maneuver_distance": maneuvered.miss_distance_km,
+            "post_maneuver_probability": maneuvered.collision_probability,
+            "post_maneuver_relative_position_rtn_km": (
+                maneuvered.relative_position_rtn_km
+            ),
+            "post_maneuver_relative_velocity_rtn_km_s": (
+                maneuvered.relative_velocity_rtn_km_s
+            ),
+            "tested_lead_times_hours": tested_leads,
+            "tested_probabilities": tested_probabilities,
+        }
+    )
+
+    maneuver.update(
+        {
+            "epoch": float(windows[0][0]),
+            "type": "CONTINUOUS_LOW_THRUST",
+            "frame": "RTN",
+            "direction": np.array([0.0, 1.0, 0.0]),
+            "restore_direction": np.array([0.0, -1.0, 0.0]),
+            "lead_time_hours": float(lead_hours),
+            "duration_seconds": avoidance_burn_duration_seconds,
+            "restore_delay_seconds_after_tca": restore_delay_seconds,
+            "windows": windows,
+            "thrust_n": thrust_n,
+            "delta_v": delta_v_mps,
+            "magnitude": delta_v_mps,
+            "executed": False,
+        }
+    )
 
     payload = {
         "MESSAGE_ID": "ARTIFICIAL-COLA-LOW-THRUST-001",
@@ -358,6 +456,8 @@ def main():
     plt.title("Relative RTN Components")
     plt.legend()
     plt.show()
+
+    return conjunction
 
 
 if __name__ == "__main__":

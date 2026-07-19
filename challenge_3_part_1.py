@@ -22,6 +22,8 @@ from functions import *
 
 
 def main():
+    spacecraft = create_spacecraft("Challenge 3 Part 1 Spacecraft")
+
     step_s = 10.0
     duration_h = 8.0
     anomaly_time_h = 1.0
@@ -84,6 +86,39 @@ def main():
         pointing_error_deg[index] = quaternion_error_angle_deg(quaternions[index])
 
     state_codes = np.array([list(SpacecraftState).index(state) for state in states])
+
+    spacecraft["attitude"].update(
+        {
+            "q": quaternions[-1],
+            "omega": angular_rates_rad_s[-1],
+            "quaternion_history": quaternions,
+            "angular_rate_history_rad_s": angular_rates_rad_s,
+            "pointing_error_history_deg": pointing_error_deg,
+        }
+    )
+    spacecraft["vehicle"].update(
+        {
+            "drag_area": drag_area_m2[-1],
+            "drag_area_history_m2": drag_area_m2,
+            "nominal_drag_area_m2": area_ram_m2,
+            "tumbling_drag_area_m2": area_tumble_m2,
+        }
+    )
+    spacecraft["operations"].update(
+        {
+            "state": states[-1],
+            "state_history": states,
+            "state_code_history": state_codes,
+            "recovering": states[-1] == SpacecraftState.RECOVERY,
+            "recovered": states[-1] == SpacecraftState.RECOVERED,
+            "mission_lost": states[-1] == SpacecraftState.MISSION_LOSS,
+            "anomaly_time_h": anomaly_time_h,
+            "recovery_start_h": recovery_start_h,
+            "recovery_complete_h": recovery_complete_h,
+            "time_history_s": times_s,
+            "time_history_h": times_h,
+        }
+    )
 
     print("Challenge 3, Part 1")
     print("-------------------")
@@ -154,6 +189,8 @@ def main():
     plt.tight_layout()
 
     plt.show()
+
+    return spacecraft
 
 
 if __name__ == "__main__":

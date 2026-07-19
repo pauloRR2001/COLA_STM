@@ -1,0 +1,322 @@
+Lynk Global Flight Dynamics Challenge - Requirements Summary
+============================================================
+
+Purpose
+-------
+Prepare a candidate response for a 2-hour interactive engineering panel discussion. The challenge evaluates:
+
+1. First-principles orbital mechanics.
+2. Practical operational trade studies.
+3. Ability to build right-sized automation tools.
+4. Ability to turn ambiguous operational problems into useful engineering requirements.
+5. Judgment in constellation flight dynamics, collision avoidance, and anomaly recovery.
+
+The expected effort is approximately 4-6 hours. The response may be a slide deck, technical write-up, spreadsheet, or other effective medium. Assumptions should be explicitly documented.
+
+
+Scenario
+--------
+A LEO Walker constellation is being deployed. Satellites are injected directly into a lower circular operational drift orbit to optimize launch vehicle performance and remove altitude margins from the launch manifest.
+
+Plane separation is achieved passively through J2-driven differential RAAN precession between the lower drift orbit and the final operational orbit.
+
+The launch campaign occurs during Solar Maximum, so elevated and variable thermospheric density produces significant aerodynamic drag uncertainty.
+
+
+Fixed Baseline Parameters
+-------------------------
+Spacecraft:
+- Mass: 420 kg
+- Propulsion: single 35 mN Hall-effect thruster
+- Specific impulse: Isp = 1400 s
+- Thruster used for stationkeeping and maneuvers
+
+Orbits:
+- Initial launch / drift orbit: 330 km circular, 51.6 deg inclination
+- Target operational orbit: 520 km circular, 51.6 deg inclination
+
+Drag configuration:
+- Nominal ram-face drag area: A_ram = 0.65 m^2
+- Maximum drag area: A_max = 21.5 m^2
+- Tumbling drag area: A_tumble = 9.5 m^2
+- Drag coefficient: Cd = 2.2
+
+Environment:
+- Solar Maximum conditions
+- Expected decay rate at 330 km under nominal ram-face attitude: -0.512 km/day
+
+
+Part 1 Requirements: Orbit Raising, Phasing, and Differential Drag
+------------------------------------------------------------------
+Given:
+- Satellite remains in the drift orbit for exactly 110 days.
+- Two strategies are compared.
+
+Strategy A: Passive Decay
+- No maneuvers during the drift phase.
+- Satellite naturally decays from 330 km to approximately 273.7 km.
+- Then performs a continuous low-thrust raise to the 520 km operational orbit.
+- Drift-phase HET delta-V: 0 m/s.
+- Orbit-raise delta-V to 520 km: approximately 140.4 m/s.
+
+Strategy B: Maintained Altitude
+- Periodic prograde HET top-up burns counteract drag.
+- Satellite remains near 330 km throughout the 110-day drift.
+- Then performs the final raise to 520 km.
+- Drift-phase HET delta-V: approximately 68.5 m/s.
+- Orbit-raise delta-V to 520 km: approximately 108.2 m/s.
+
+Candidate should address:
+1. Compute and compare total delta-V for Strategy A and Strategy B.
+2. Explain why Strategy A can have lower total delta-V despite beginning the final raise from a lower altitude.
+3. Explain how J2 differential RAAN drift changes as altitude decays.
+4. Discuss how Strategy A's changing altitude affects RAAN targeting accuracy and constellation plane placement.
+5. Discuss operational risks of allowing decay to about 273.7 km during Solar Maximum.
+6. Compare propellant savings against lifetime, recovery, drag uncertainty, and collision-risk margins.
+7. State which strategy is preferred, or define a decision rule for selecting between them.
+8. Document all assumptions.
+
+Important equations to include:
+- J2 nodal precession:
+  Omega_dot = -(3/2) * J2 * n * (R_E/p)^2 * cos(i)
+
+- Circular mean motion:
+  n = sqrt(mu/a^3)
+
+- Low-thrust acceleration:
+  a_T = T/m
+
+- Mass depletion:
+  mdot = -T/(Isp*g0)
+
+
+Part 2 Requirements: Low-Thrust COLA and Differential-Drag Mitigation
+---------------------------------------------------------------------
+The candidate should design a minimum viable automated CDM-to-maneuver-recommendation pipeline.
+
+Candidate should address:
+1. Explain why low-thrust COLA differs from impulsive COLA.
+2. Account for finite-burn arcs and earlier decision timelines.
+3. Discuss how covariance evolves during continuous-thrust maneuvers.
+4. Define how to evaluate whether a maneuver reduces risk sufficiently.
+5. Discuss whether differential drag can mitigate conjunctions by changing satellite attitude.
+6. Estimate along-track timing change from changing drag area.
+7. Explain when differential drag is preferable to HET thrust and when it is not.
+8. Propose a minimum viable automated pipeline for conjunction response.
+9. Identify which parts should initially remain human-in-the-loop.
+10. Identify validation, audit, and safety checks needed before automation can scale.
+
+Minimum pipeline functions:
+- Ingest CDM or conjunction alert.
+- Validate object identifiers, epochs, states, frames, and covariance data.
+- Normalize states and covariances to a common frame/time system.
+- Propagate primary and secondary objects to TCA.
+- Compute miss distance, covariance geometry, and probability of collision.
+- Generate candidate mitigations:
+  * low-thrust burn options,
+  * differential-drag attitude options,
+  * no-maneuver option.
+- Score each option by collision-risk reduction, delta-V, propellant impact, coverage impact, schedule impact, and downstream conjunction risk.
+- Recommend an action.
+- Route recommendation for human approval.
+- Generate command products after approval.
+- Monitor post-action orbit and update the plan.
+
+Important equations to include:
+- Drag acceleration:
+  a_D = -0.5 * rho * v_rel^2 * Cd * (A/m) * vhat_rel
+
+- Ballistic coefficient:
+  B = m/(Cd*A)
+
+- Mean motion:
+  n = sqrt(mu/a^3)
+
+- Approximate mean-motion change:
+  Delta_n/n ~= -(3/2) * Delta_a/a
+
+- Along-track separation accumulation:
+  Delta_s(t) ~= a * integral(Delta_n(t) dt)
+
+- Timing shift at TCA:
+  Delta_t_TCA ~= Delta_s_TCA/v
+
+
+Part 3 Requirements: Operational Risk and Anomaly Management
+------------------------------------------------------------
+Scenario:
+- Immediately after launch, the spacecraft loses attitude control and tumbles.
+- Effective drag area increases from A_ram = 0.65 m^2 to A_tumble = 9.5 m^2.
+
+Candidate should address:
+1. Compute the drag-area multiplier:
+   A_tumble/A_ram = 9.5/0.65 ~= 14.6
+
+2. Estimate the new altitude decay rate at 330 km under first-order scaling:
+   hdot_tumble ~= 14.6 * (-0.512 km/day) ~= -7.5 km/day
+
+3. Define and justify a point-of-no-return altitude.
+4. Estimate the number of days available before reaching the point of no return.
+5. Discuss uncertainty in density, attitude state, drag coefficient, and thruster availability.
+6. Define telemetry or orbit-determination triggers for declaring an emergency recovery mode.
+7. Recommend operational thresholds and response timelines.
+8. Explain how the recovery logic should be automated or decision-supported.
+
+The point of no return is not explicitly specified in the challenge. The candidate must define it. A defensible definition is:
+- the altitude at which maximum available thrust can no longer overcome high-percentile drag with sufficient recovery margin, or
+- the altitude below which the remaining time before reentry is shorter than the combined ADCS recovery, orbit determination, maneuver planning, approval, and thrust-raise timeline.
+
+
+Simulation Requirements for a Programmatic Solution
+---------------------------------------------------
+A challenge-faithful simulation should include:
+
+1. State propagation:
+   - Cartesian Cowell propagation or equivalent.
+   - Earth two-body gravity.
+   - J2 perturbation.
+   - Atmospheric drag.
+   - Continuous low thrust.
+   - Mass depletion.
+
+2. Drag model:
+   - At minimum, calibrated to reproduce the provided decay rate of -0.512 km/day at 330 km with A_ram = 0.65 m^2 and Cd = 2.2.
+   - Optionally, use an exponential density model calibrated to the same decay rate.
+   - Optionally, use NRLMSISE-00, JB2008, DTM, or another atmosphere model, but the result should be benchmarked against the challenge-specified decay rate.
+
+3. Attitude/area modes:
+   - Nominal ram-face mode: A = 0.65 m^2.
+   - Maximum drag mode: A = 21.5 m^2.
+   - Tumbling mode: A = 9.5 m^2.
+
+4. Thrust model:
+   - T = 35 mN.
+   - Isp = 1400 s.
+   - Thrust direction should be documented.
+   - For orbit raising and stationkeeping, a tangential/prograde steering law is acceptable for a first-order simulation.
+
+5. Outputs:
+   - altitude vs. time,
+   - semi-major axis vs. time,
+   - eccentricity vs. time,
+   - inclination vs. time,
+   - RAAN vs. time,
+   - RAAN drift rate vs. time,
+   - delta-V used,
+   - propellant mass used,
+   - time to reach target orbit,
+   - time to reach recovery threshold,
+   - along-track displacement for differential-drag cases,
+   - COLA risk before and after mitigation.
+
+6. Validation checks:
+   - Strategy A should roughly reproduce 330 km to 273.7 km after 110 days.
+   - Strategy A orbit raise delta-V should be compared against approximately 140.4 m/s.
+   - Strategy B drift maintenance delta-V should be compared against approximately 68.5 m/s.
+   - Strategy B orbit raise delta-V should be compared against approximately 108.2 m/s.
+   - Tumbling decay should show order-of-magnitude agreement with the 14.6x area multiplier estimate.
+
+7. Sensitivity analysis:
+   - density multiplier,
+   - drag coefficient uncertainty,
+   - area uncertainty,
+   - thrust duty cycle,
+   - missed thrust events,
+   - delayed ADCS commissioning,
+   - recovery altitude threshold,
+   - covariance/process noise for COLA.
+
+
+Simulation Fidelity Guidance
+----------------------------
+Minimum acceptable model:
+- Two-body + J2 + calibrated drag + low thrust + mass depletion.
+
+Useful enhanced model:
+- Exponential atmosphere calibrated to challenge data.
+- Earth atmosphere co-rotation for relative drag velocity.
+- J2 plus optional J3/J4.
+- Event detection for altitude thresholds and maneuver transitions.
+- Monte Carlo or grid sweep over density uncertainty.
+
+Operational-grade model, not required by the challenge:
+- High-degree gravity.
+- NRLMSISE-00/JB2008 with solar and geomagnetic drivers.
+- Earth orientation parameters, precession/nutation, polar motion.
+- Third-body Sun/Moon gravity.
+- Solar radiation pressure.
+- Full covariance propagation and CDM covariance handling.
+- Integrated scheduling, command generation, and post-maneuver orbit determination.
+
+Precession, nutation, polar motion, and full EOP handling are not explicitly required by the challenge. They may be appropriate for an operational tool, but the challenge primarily tests J2, drag, low-thrust maneuvering, and operational decision logic.
+
+
+Make-vs-Buy / Architecture Requirements
+---------------------------------------
+A strong candidate should not propose writing every astrodynamics component from scratch. The recommended architecture is layered:
+
+Layer 1: Scientific kernel
+- frames,
+- time systems,
+- Earth orientation,
+- gravity models,
+- atmosphere models,
+- propagators,
+- event detection,
+- SPICE/ephemeris support.
+
+These should generally be bought, adopted, or reused from validated tools such as Orekit, GMAT, CSPICE, Tudat, STK/ODTK, or equivalent.
+
+Layer 2: Flight dynamics library
+- maneuver design,
+- low-thrust finite-burn modeling,
+- stationkeeping,
+- covariance propagation,
+- COLA geometry,
+- differential-drag utilities,
+- constellation phasing utilities.
+
+This may be a mix of adopted and custom code.
+
+Layer 3: Operations decision engine
+- CDM prioritization,
+- maneuver recommendation logic,
+- fleet impact scoring,
+- coverage impact scoring,
+- differential-drag vs thrust trade,
+- anomaly recovery logic,
+- decision thresholds,
+- audit logging.
+
+This should mostly be custom because it encodes company-specific operations policy.
+
+Layer 4: Mission software / operator workflow
+- dashboards,
+- APIs,
+- command generation,
+- approval workflow,
+- telemetry feedback,
+- reporting,
+- training and procedures.
+
+This should mostly be custom.
+
+Core principle:
+- Buy or adopt validated physics infrastructure.
+- Build the mission-specific decision logic that differentiates the company.
+
+
+Reviewer Emphasis
+-----------------
+The most important aspects to evaluate are:
+
+1. Does the candidate understand the orbital mechanics?
+2. Does the candidate recognize drag uncertainty as a dominant risk under Solar Maximum?
+3. Does the candidate trade propellant against lifetime, recovery margin, schedule, and collision risk?
+4. Does the candidate understand low-thrust COLA as a finite-time decision problem?
+5. Does the candidate propose automation that scales from a few satellites to hundreds?
+6. Does the candidate keep safety-critical execution human-in-the-loop at first?
+7. Does the candidate document assumptions and turn missing information into operational requirements?
+8. Does the candidate distinguish between reusable astrodynamics infrastructure and company-specific operational intelligence?
+
+The challenge is best interpreted as a scalable flight-dynamics operations design problem, not merely an orbit-mechanics calculation exercise.

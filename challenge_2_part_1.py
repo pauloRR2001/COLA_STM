@@ -271,6 +271,92 @@ def main():
     plt.xlabel("Time from epoch [h]")
     plt.ylabel("Maneuver displacement [m]")
     plt.legend()
+
+    # Spacecraft-to-spacecraft relative motion in the primary-centered RTN frame.
+    relative_nominal_rtn = np.array(
+        [
+            rtn_basis(primary_nominal.states[index]).T
+            @ (
+                secondary.states[index, :3]
+                - primary_nominal.states[index, :3]
+            )
+            for index in range(len(primary_nominal.times))
+        ]
+    )
+    relative_maneuvered_rtn = np.array(
+        [
+            rtn_basis(primary_maneuvered.states[index]).T
+            @ (
+                secondary.states[index, :3]
+                - primary_maneuvered.states[index, :3]
+            )
+            for index in range(len(primary_maneuvered.times))
+        ]
+    )
+
+    figure = plt.figure()
+    axis = figure.add_subplot(111, projection="3d")
+    axis.plot(
+        relative_nominal_rtn[:, 0] * 1000.0,
+        relative_nominal_rtn[:, 1] * 1000.0,
+        relative_nominal_rtn[:, 2] * 1000.0,
+        label="Nominal relative trajectory",
+    )
+    axis.plot(
+        relative_maneuvered_rtn[:, 0] * 1000.0,
+        relative_maneuvered_rtn[:, 1] * 1000.0,
+        relative_maneuvered_rtn[:, 2] * 1000.0,
+        label="Maneuvered relative trajectory",
+    )
+    axis.scatter(0.0, 0.0, 0.0, marker="x", label="Primary spacecraft")
+    axis.set_xlabel("Radial, R [m]")
+    axis.set_ylabel("Along-track, T [m]")
+    axis.set_zlabel("Cross-track, N [m]")
+    axis.set_title("Secondary Motion in the Primary RTN Frame")
+    axis.legend()
+
+    plt.figure()
+    time_to_nominal_tca_hours = (
+        primary_nominal.times - nominal.tca_seconds
+    ) / 3600.0
+    plt.plot(
+        time_to_nominal_tca_hours,
+        relative_nominal_rtn[:, 0] * 1000.0,
+        label="Nominal R",
+    )
+    plt.plot(
+        time_to_nominal_tca_hours,
+        relative_nominal_rtn[:, 1] * 1000.0,
+        label="Nominal T",
+    )
+    plt.plot(
+        time_to_nominal_tca_hours,
+        relative_nominal_rtn[:, 2] * 1000.0,
+        label="Nominal N",
+    )
+    plt.plot(
+        time_to_nominal_tca_hours,
+        relative_maneuvered_rtn[:, 0] * 1000.0,
+        linestyle="--",
+        label="Maneuvered R",
+    )
+    plt.plot(
+        time_to_nominal_tca_hours,
+        relative_maneuvered_rtn[:, 1] * 1000.0,
+        linestyle="--",
+        label="Maneuvered T",
+    )
+    plt.plot(
+        time_to_nominal_tca_hours,
+        relative_maneuvered_rtn[:, 2] * 1000.0,
+        linestyle="--",
+        label="Maneuvered N",
+    )
+    plt.axvline(0.0)
+    plt.xlabel("Time from nominal TCA [h]")
+    plt.ylabel("Secondary relative position [m]")
+    plt.title("Relative RTN Components")
+    plt.legend()
     plt.show()
 
 

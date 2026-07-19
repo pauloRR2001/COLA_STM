@@ -13,44 +13,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from constants import area_ram_m2, area_tumble_m2
-from functions.state_machine import SpacecraftState, update_state
+from functions import *
 
 
-DEG2RAD = np.pi / 180.0
-RAD2DEG = 180.0 / np.pi
 
 
-def quaternion_multiply(q_left, q_right):
-    """Multiply scalar-first quaternions."""
-    w1, x1, y1, z1 = q_left
-    w2, x2, y2, z2 = q_right
-    return np.array(
-        [
-            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-        ]
-    )
 
-
-def propagate_quaternion(q, omega_rad_s, dt_s):
-    """Advance a scalar-first quaternion over one constant-rate time step."""
-    rate = np.linalg.norm(omega_rad_s)
-    if rate == 0.0:
-        return q.copy()
-
-    half_angle = 0.5 * rate * dt_s
-    axis = omega_rad_s / rate
-    dq = np.concatenate(([np.cos(half_angle)], axis * np.sin(half_angle)))
-    q_next = quaternion_multiply(q, dq)
-    return q_next / np.linalg.norm(q_next)
-
-
-def quaternion_error_angle_deg(q):
-    """Return the principal attitude error relative to the identity attitude."""
-    scalar = np.clip(abs(q[0]), 0.0, 1.0)
-    return 2.0 * np.arccos(scalar) * RAD2DEG
 
 
 def main():

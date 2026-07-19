@@ -22,11 +22,10 @@ from constants import (
     mass_kg,
     mu_earth_km3_s2,
 )
-from functions.state_machine import SpacecraftState, update_state
+from functions import *
 
 
 DEG2RAD = np.pi / 180.0
-EARTH_ROTATION_RAD_S = 7.2921159e-5
 
 
 @dataclass
@@ -40,14 +39,6 @@ class SweepResult:
     final_separation_km: float
     success: bool
 
-
-def atmospheric_density_kg_m3(altitude_km):
-    """Simple exponential thermosphere model referenced at 400 km."""
-    reference_altitude_km = 400.0
-    reference_density_kg_m3 = 3.5e-12
-    scale_height_km = 58.0
-    exponent = -(altitude_km - reference_altitude_km) / scale_height_km
-    return reference_density_kg_m3 * np.exp(np.clip(exponent, -50.0, 50.0))
 
 
 def operational_state(time_s, recovery_start_s, recovery_duration_s):
@@ -86,12 +77,6 @@ def operational_state(time_s, recovery_start_s, recovery_duration_s):
 
     return update_state(status)
 
-
-def drag_area_from_state(state):
-    """Map the operational state to an effective drag area."""
-    if state in (SpacecraftState.TUMBLING, SpacecraftState.RECOVERY):
-        return area_tumble_m2
-    return area_ram_m2
 
 
 def acceleration_km_s2(state, time_s, recovery_start_s, recovery_duration_s):

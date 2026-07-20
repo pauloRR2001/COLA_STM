@@ -33,7 +33,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 OUTPUT_DIR = Path("outputs")
 FIGURE_DIR = OUTPUT_DIR / "figures"
 REPORT_PATH = OUTPUT_DIR / "summary_report.pdf"
-DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("SUMMARY_TIMEOUT_SECONDS", "120"))
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("SUMMARY_TIMEOUT_SECONDS", "1800"))
 
 
 @dataclass(frozen=True)

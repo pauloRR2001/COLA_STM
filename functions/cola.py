@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Iterable
 
 import numpy as np
 
-
-AccelerationModel = Callable[[np.ndarray, float], np.ndarray]
+from constants import area_ram_m2, cd, drag_reference_altitude_km, drag_reference_density_kg_m3, drag_scale_height_km
+from functions.orekit import propagate_schedule
 
 
 @dataclass
@@ -41,61 +41,37 @@ def rtn_basis(state: np.ndarray) -> np.ndarray:
     return np.column_stack((r_hat, t_hat, h_hat))
 
 
-def two_body_acceleration(mu_km3_s2: float) -> AccelerationModel:
-    def model(state: np.ndarray, _time: float) -> np.ndarray:
-        r = state[:3]
-        return -mu_km3_s2 * r / np.linalg.norm(r) ** 3
+def two_body_acceleration(mu_km3_s2: float) -> dict:
+    """Return the default Orekit force-model configuration.
 
-    return model
-
-
-def combined_acceleration(*models: AccelerationModel) -> AccelerationModel:
-    def model(state: np.ndarray, time: float) -> np.ndarray:
-        total = np.zeros(3)
-        for item in models:
-            total += item(state, time)
-        return total
-
-    return model
-
-
-def gravity_jacobian(state: np.ndarray, mu_km3_s2: float) -> np.ndarray:
-    r = state[:3]
-    radius = np.linalg.norm(r)
-    identity = np.eye(3)
-    gradient = mu_km3_s2 * (3.0 * np.outer(r, r) / radius**5 - identity / radius**3)
-    matrix = np.zeros((6, 6))
-    matrix[:3, 3:] = identity
-    matrix[3:, :3] = gradient
-    return matrix
+    The name is retained for compatibility with the challenge scripts. Orekit
+    always supplies the central field through its 20x20 spherical-harmonic
+    gravity model, so this function no longer creates a Python acceleration.
+    """
+    return {
+        "engine": "orekit",
+        "mu_km3_s2": mu_km3_s2,
+        "area_m2": area_ram_m2,
+        "cd": cd,
+        "rho0_kg_m3": drag_reference_density_kg_m3,
+        "reference_altitude_km": drag_reference_altitude_km,
+        "scale_height_km": drag_scale_height_km,
+        "thrust_windows": [],
+        "area_windows": [],
+    }
 
 
-def _derivative(
-    augmented: np.ndarray,
-    time: float,
-    acceleration_model: AccelerationModel,
-    mu_km3_s2: float,
-) -> np.ndarray:
-    state = augmented[:6]
-    phi = augmented[6:].reshape(6, 6)
-    state_rate = np.hstack((state[3:], acceleration_model(state, time)))
-    phi_rate = gravity_jacobian(state, mu_km3_s2) @ phi
-    return np.hstack((state_rate, phi_rate.ravel()))
-
-
-def _rk4_step(
-    augmented: np.ndarray,
-    time: float,
-    step: float,
-    acceleration_model: AccelerationModel,
-    mu_km3_s2: float,
-) -> np.ndarray:
-    f = lambda x, t: _derivative(x, t, acceleration_model, mu_km3_s2)
-    k1 = f(augmented, time)
-    k2 = f(augmented + 0.5 * step * k1, time + 0.5 * step)
-    k3 = f(augmented + 0.5 * step * k2, time + 0.5 * step)
-    k4 = f(augmented + step * k3, time + step)
-    return augmented + step * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+def combined_acceleration(*models: dict) -> dict:
+    combined = two_body_acceleration(0.0)
+    for model in models:
+        if not isinstance(model, dict):
+            raise TypeError("Custom Python acceleration callbacks are no longer supported; use Orekit configuration dictionaries.")
+        for key, value in model.items():
+            if key in ("thrust_windows", "area_windows"):
+                combined[key].extend(value)
+            else:
+                combined[key] = value
+    return combined
 
 
 def propagate(
@@ -103,30 +79,53 @@ def propagate(
     initial_covariance: np.ndarray,
     duration_seconds: float,
     step_seconds: float,
-    acceleration_model: AccelerationModel,
+    acceleration_model: dict,
     mu_km3_s2: float,
 ) -> PropagationResult:
-    count = int(abs(duration_seconds) / abs(step_seconds)) + 1
-    times = np.linspace(0.0, duration_seconds, count)
-    augmented = np.hstack((initial_state, np.eye(6).ravel()))
-    states = np.zeros((count, 6))
-    covariances = np.zeros((count, 6, 6))
-    states[0] = initial_state
-    covariances[0] = initial_covariance
+    if not isinstance(acceleration_model, dict) or acceleration_model.get("engine") != "orekit":
+        raise TypeError("Propagation requires an Orekit force-model configuration.")
 
-    for index in range(1, count):
-        dt = times[index] - times[index - 1]
-        augmented = _rk4_step(
-            augmented,
-            times[index - 1],
-            dt,
-            acceleration_model,
-            mu_km3_s2,
-        )
-        phi = augmented[6:].reshape(6, 6)
-        states[index] = augmented[:6]
-        covariances[index] = phi @ initial_covariance @ phi.T
+    direction = 1.0 if duration_seconds >= 0.0 else -1.0
+    end_time = duration_seconds
+    boundaries = {0.0, end_time}
+    for key in ("thrust_windows", "area_windows"):
+        for start, stop, *_ in acceleration_model.get(key, []):
+            if min(0.0, end_time) < start < max(0.0, end_time):
+                boundaries.add(float(start))
+            if min(0.0, end_time) < stop < max(0.0, end_time):
+                boundaries.add(float(stop))
+    ordered = sorted(boundaries, reverse=direction < 0.0)
+    segments = []
+    for start, stop in zip(ordered[:-1], ordered[1:]):
+        midpoint = 0.5 * (start + stop)
+        area = float(acceleration_model.get("area_m2", area_ram_m2))
+        for window_start, window_stop, scheduled_area in acceleration_model.get("area_windows", []):
+            if min(window_start, window_stop) <= midpoint < max(window_start, window_stop):
+                area = float(scheduled_area)
+                break
+        thrust = 0.0
+        thrust_direction = "NONE"
+        for window_start, window_stop, scheduled_thrust, scheduled_direction in acceleration_model.get("thrust_windows", []):
+            if min(window_start, window_stop) <= midpoint < max(window_start, window_stop):
+                thrust = float(scheduled_thrust)
+                thrust_direction = str(scheduled_direction)
+                break
+        segments.append({
+            "duration_s": stop - start,
+            "area_m2": area,
+            "cd": acceleration_model.get("cd", cd),
+            "rho0_kg_m3": acceleration_model.get("rho0_kg_m3", drag_reference_density_kg_m3),
+            "reference_altitude_km": acceleration_model.get("reference_altitude_km", drag_reference_altitude_km),
+            "scale_height_km": acceleration_model.get("scale_height_km", drag_scale_height_km),
+            "thrust_n": thrust,
+            "thrust_direction": thrust_direction,
+        })
 
+    times, states, _masses, stms = propagate_schedule(
+        initial_state, segments, abs(step_seconds), return_stm=True
+    )
+    initial_covariance = np.asarray(initial_covariance, dtype=float)
+    covariances = np.einsum("nij,jk,nlk->nil", stms, initial_covariance, stms)
     return PropagationResult(times, states, covariances)
 
 

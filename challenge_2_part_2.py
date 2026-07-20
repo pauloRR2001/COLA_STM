@@ -66,47 +66,17 @@ def atmospheric_density_kg_m3(altitude_km):
 
 
 def drag_model(area_schedule):
-    """Return an atmospheric-drag acceleration model.
-
-    ``area_schedule`` is an iterable of ``(start, stop, area_m2)`` intervals.
-    Outside those intervals the spacecraft uses ``area_ram_m2``.
-    """
-
-    omega_earth = np.array([0.0, 0.0, earth_rotation_rate_rad_s])
-
-    def model(state, time):
-        r_km = state[:3]
-        v_km_s = state[3:]
-        altitude_km = np.linalg.norm(r_km) - earth_radius_km
-        density = atmospheric_density_kg_m3(altitude_km)
-
-        area_m2 = area_ram_m2
-        for start, stop, scheduled_area in area_schedule:
-            if start <= time < stop:
-                area_m2 = scheduled_area
-                break
-
-        # Atmosphere co-rotates with Earth.  Convert its velocity to km/s.
-        atmosphere_velocity_km_s = np.cross(omega_earth, r_km)
-        relative_velocity_km_s = v_km_s - atmosphere_velocity_km_s
-        relative_speed_m_s = np.linalg.norm(relative_velocity_km_s) * 1000.0
-
-        if relative_speed_m_s == 0.0:
-            return np.zeros(3)
-
-        # Drag magnitude is computed in SI, then converted from m/s^2 to km/s^2.
-        acceleration_m_s2 = (
-            -0.5
-            * density
-            * cd
-            * area_m2
-            / mass_kg
-            * relative_speed_m_s
-            * (relative_velocity_km_s * 1000.0)
-        )
-        return acceleration_m_s2 / 1000.0
-
-    return model
+    """Return an Orekit drag configuration with scheduled effective areas."""
+    return {
+        "engine": "orekit",
+        "area_m2": area_ram_m2,
+        "area_windows": list(area_schedule),
+        "thrust_windows": [],
+        "cd": cd,
+        "rho0_kg_m3": drag_reference_density_kg_m3,
+        "reference_altitude_km": drag_reference_altitude_km,
+        "scale_height_km": drag_scale_height_km,
+    }
 
 
 def main():

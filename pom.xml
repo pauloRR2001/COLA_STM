@@ -47,7 +47,7 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.6.2</version>
         <configuration>
-          <mainClass>com.colastm.OrekitSmokeTest</mainClass>
+          <mainClass>com.colastm.OrekitPropagationCli</mainClass>
         </configuration>
       </plugin>
     </plugins>

@@ -41,16 +41,17 @@ from functions.models import create_conjunction
 
 
 def thrust_model(burn_windows):
-    acceleration_km_s2 = thrust_n / mass_kg / 1000.0
-
-    def model(state, time):
-        acceleration = np.zeros(3)
-        for start, stop, direction in burn_windows:
-            if start <= time < stop:
-                acceleration += direction * acceleration_km_s2 * rtn_basis(state)[:, 1]
-        return acceleration
-
-    return model
+    windows = []
+    for start, stop, direction in burn_windows:
+        windows.append(
+            (
+                start,
+                stop,
+                thrust_n,
+                "PROGRADE" if direction >= 0.0 else "RETROGRADE",
+            )
+        )
+    return {"engine": "orekit", "thrust_windows": windows, "area_windows": []}
 
 
 def covariance(position_sigma_km, velocity_sigma_km_s):

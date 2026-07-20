@@ -5,3 +5,4 @@ from .state_machine import SpacecraftState, update_state
 from .attitude import *
 from .environment import *
 from .models import *
+from .orekit import *

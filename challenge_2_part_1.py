@@ -29,6 +29,7 @@ from constants import (
 )
 from functions.cola import (
     assess_conjunction,
+    assess_conjunction_at_time,
     combined_acceleration,
     create_synthetic_encounter,
     propagate,
@@ -147,7 +148,12 @@ def main():
         gravity,
         mu_earth_km3_s2,
     )
-    nominal = assess_conjunction(primary_nominal, secondary, hard_body_radius_km)
+    nominal = assess_conjunction_at_time(
+        primary_nominal,
+        secondary,
+        nominal_tca_seconds,
+        hard_body_radius_km,
+    )
 
     tested_leads = []
     tested_probabilities = []

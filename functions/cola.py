@@ -180,6 +180,41 @@ def assess_conjunction(
     )
 
 
+def assess_conjunction_at_time(
+    primary: PropagationResult,
+    secondary: PropagationResult,
+    tca_seconds: float,
+    hard_body_radius_km: float,
+) -> ConjunctionResult:
+    """Assess a conjunction at a known CDM TCA instead of searching globally."""
+    index = int(np.argmin(np.abs(primary.times - tca_seconds)))
+    relative_position = secondary.states[index, :3] - primary.states[index, :3]
+    relative_velocity = secondary.states[index, 3:] - primary.states[index, 3:]
+    basis = rtn_basis(primary.states[index])
+    relative_rtn = basis.T @ relative_position
+    relative_velocity_rtn = basis.T @ relative_velocity
+    combined_covariance = primary.covariances[index] + secondary.covariances[index]
+    covariance_rtn = basis.T @ combined_covariance[:3, :3] @ basis
+    probability = estimate_collision_probability(
+        relative_rtn,
+        covariance_rtn,
+        hard_body_radius_km,
+    )
+    distances = np.linalg.norm(secondary.states[:, :3] - primary.states[:, :3], axis=1)
+    return ConjunctionResult(
+        index=index,
+        tca_seconds=float(primary.times[index]),
+        miss_distance_km=float(np.linalg.norm(relative_position)),
+        relative_position_eci_km=relative_position,
+        relative_velocity_eci_km_s=relative_velocity,
+        relative_position_rtn_km=relative_rtn,
+        relative_velocity_rtn_km_s=relative_velocity_rtn,
+        combined_position_covariance_rtn_km2=covariance_rtn,
+        collision_probability=probability,
+        distances_km=distances,
+    )
+
+
 def create_synthetic_encounter(
     mu_km3_s2: float,
     earth_radius_km: float,

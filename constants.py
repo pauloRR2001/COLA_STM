@@ -41,13 +41,17 @@ strategy_a_delta_v_savings_mps = 36.3
 cola_altitude_km = 520.0
 cola_lead_time_days = 3.0
 cola_step_seconds = 60.0
-primary_position_sigma_km = 0.050
-primary_velocity_sigma_km_s = 0.00005
-secondary_position_sigma_km = 0.150
-secondary_velocity_sigma_km_s = 0.00015
+primary_position_sigma_km = 0.002
+primary_velocity_sigma_km_s = 0.000000001
+secondary_position_sigma_km = 0.002
+secondary_velocity_sigma_km_s = 0.000000001
 hard_body_radius_km = 0.010
-target_miss_rtn_km = (0.050, 0.030, 0.020)
-target_relative_velocity_rtn_km_s = (0.0, 0.010, 0.0)
+# Synthetic COLA test target at nominal TCA.  The radial miss is intentionally
+# only 1 meter, well inside the 10 meter hard-body radius, so Challenge 2 starts
+# as a near-collision before any mitigation is applied.  The challenge scripts
+# then back-propagate this TCA geometry to produce their epoch states.
+target_miss_rtn_km = (0.001, 0.0, 0.0)
+target_relative_velocity_rtn_km_s = (0.0, 0.0001, 0.0)
 collision_probability_threshold = 1.0e-4
 avoidance_burn_duration_seconds = 3600.0
 restore_delay_seconds = 1800.0

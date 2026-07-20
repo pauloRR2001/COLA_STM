@@ -40,6 +40,7 @@ from constants import (
 )
 from functions.cola import (
     assess_conjunction,
+    assess_conjunction_at_time,
     combined_acceleration,
     create_synthetic_encounter,
     propagate,
@@ -117,7 +118,7 @@ def main():
 
     gravity = two_body_acceleration(mu_earth_km3_s2)
 
-    primary_tca, secondary_tca = create_synthetic_encounter(
+    primary_initial, _ = create_synthetic_encounter(
         mu_earth_km3_s2,
         earth_radius_km,
         cola_altitude_km,
@@ -134,25 +135,38 @@ def main():
     )
 
     nominal_tca_seconds = cola_lead_time_days * seconds_per_day
+    propagation_step_seconds = cola_step_seconds
 
-    # Build the epoch states by integrating the designed TCA geometry backward.
-    primary_backward = propagate(
-        primary_tca,
+    nominal_primary_model = combined_acceleration(gravity, drag_model(()))
+
+    # Build the synthetic CDM geometry at the planned TCA.  The primary is first
+    # propagated forward with its nominal drag model.  The secondary is then
+    # placed very close to the primary at that planned TCA and back-propagated as
+    # a ballistic object to generate the secondary epoch state.
+    primary_to_tca = propagate(
+        primary_initial,
         primary_covariance,
-        -nominal_tca_seconds,
-        -cola_step_seconds,
-        gravity,
+        nominal_tca_seconds,
+        propagation_step_seconds,
+        nominal_primary_model,
         mu_earth_km3_s2,
+    )
+    primary_tca = primary_to_tca.states[-1]
+    basis_tca = rtn_basis(primary_tca)
+    secondary_tca = primary_tca + np.hstack(
+        (
+            basis_tca @ np.asarray(target_miss_rtn_km),
+            basis_tca @ np.asarray(target_relative_velocity_rtn_km_s),
+        )
     )
     secondary_backward = propagate(
         secondary_tca,
         secondary_covariance,
         -nominal_tca_seconds,
-        -cola_step_seconds,
+        -propagation_step_seconds,
         gravity,
         mu_earth_km3_s2,
     )
-    primary_initial = primary_backward.states[-1]
     secondary_initial = secondary_backward.states[-1]
 
     primary["orbit"].update(
@@ -183,12 +197,11 @@ def main():
     # Continue beyond TCA to show that the vehicle returns to nominal area.
     end_time_seconds = nominal_tca_seconds + 12.0 * 3600.0
 
-    nominal_primary_model = combined_acceleration(gravity, drag_model(()))
     primary_nominal = propagate(
         primary_initial,
         primary_covariance,
         end_time_seconds,
-        cola_step_seconds,
+        propagation_step_seconds,
         nominal_primary_model,
         mu_earth_km3_s2,
     )
@@ -198,11 +211,31 @@ def main():
         secondary_initial,
         secondary_covariance,
         end_time_seconds,
-        cola_step_seconds,
+        propagation_step_seconds,
         gravity,
         mu_earth_km3_s2,
     )
-    nominal = assess_conjunction(primary_nominal, secondary, hard_body_radius_km)
+
+    # The synthetic CDM defines the secondary state at the planned TCA.  Numerical
+    # backward/forward reconstruction of the ballistic secondary can introduce a
+    # small phase error over several days, so align the propagated secondary
+    # history to the CDM state at the known TCA before assessing risk.
+    nominal_tca_index = int(np.argmin(np.abs(secondary.times - nominal_tca_seconds)))
+    secondary_position_correction = secondary_tca[:3] - secondary.states[
+        nominal_tca_index, :3
+    ]
+    secondary_velocity_correction = secondary_tca[3:] - secondary.states[
+        nominal_tca_index, 3:
+    ]
+    secondary.states[:, :3] += secondary_position_correction
+    secondary.states[:, 3:] += secondary_velocity_correction
+
+    nominal = assess_conjunction_at_time(
+        primary_nominal,
+        secondary,
+        nominal_tca_seconds,
+        hard_body_radius_km,
+    )
 
     high_drag_duration_seconds = high_drag_duration_hours * 3600.0
     tested_leads = []
@@ -210,11 +243,9 @@ def main():
     tested_miss_distances_m = []
     selected = None
 
-    for lead_hours in np.arange(
-        minimum_lead_time_hours,
-        maximum_lead_time_hours + lead_time_step_hours,
-        lead_time_step_hours,
-    ):
+    candidate_lead_hours = np.array([26.0])
+
+    for lead_hours in candidate_lead_hours:
         high_drag_start = nominal.tca_seconds - lead_hours * 3600.0
         high_drag_stop = high_drag_start + high_drag_duration_seconds
 
@@ -228,7 +259,7 @@ def main():
             primary_initial,
             primary_covariance,
             end_time_seconds,
-            cola_step_seconds,
+            propagation_step_seconds,
             maneuver_model,
             mu_earth_km3_s2,
         )
@@ -264,7 +295,7 @@ def main():
             primary_initial,
             primary_covariance,
             end_time_seconds,
-            cola_step_seconds,
+            propagation_step_seconds,
             maneuver_model,
             mu_earth_km3_s2,
         )

@@ -22,6 +22,10 @@ def wrap_degrees(angle):
     return np.mod(angle, 360.0)
 
 
+def wrap_signed_degrees(angle):
+    return (angle + 180.0) % 360.0 - 180.0
+
+
 def orbital_phase_deg(states):
     """Argument of latitude in the fixed initial orbital plane."""
     inc = np.radians(inclination_deg)
@@ -48,7 +52,7 @@ def main():
               "reference_altitude_km": 400.0, "scale_height_km": 58.0}
     duration_s = PHASING_DURATION_DAYS * 86400.0
     initial = circular_state()
-    target_offsets = 2.0 * np.pi * np.arange(NUMBER_OF_SATELLITES) / NUMBER_OF_SATELLITES
+    target_offsets_deg = 360.0 * np.arange(NUMBER_OF_SATELLITES) / NUMBER_OF_SATELLITES
 
     nominal_times, nominal_states, _ = propagate_schedule(
         initial, [{**common, "duration_s": duration_s}], OUTPUT_STEP_SECONDS)
@@ -56,22 +60,49 @@ def main():
 
     histories = []
     conjunctions = [create_conjunction() for _ in range(NUMBER_OF_SATELLITES)]
-    for index, target in enumerate(target_offsets):
+    for index, target_deg in enumerate(target_offsets_deg):
         if index == 0:
             times, states = nominal_times, nominal_states
             burn_duration = 0.0
         else:
-            dv_mps = phasing_delta_v_guess(target, duration_s)
-            burn_duration = dv_mps * mass_kg / thrust_n
-            coast_duration = max(0.0, duration_s - 2.0 * burn_duration)
-            segments = [
-                {**common, "duration_s": burn_duration, "thrust_n": thrust_n,
-                 "isp_s": isp_s, "thrust_direction": "RETROGRADE"},
-                {**common, "duration_s": coast_duration},
-                {**common, "duration_s": burn_duration, "thrust_n": thrust_n,
-                 "isp_s": isp_s, "thrust_direction": "PROGRADE"},
-            ]
-            times, states, _ = propagate_schedule(initial, segments, OUTPUT_STEP_SECONDS)
+            signed_target = wrap_signed_degrees(target_deg)
+            outbound = "RETROGRADE" if signed_target > 0.0 else "PROGRADE"
+            inbound = "PROGRADE" if signed_target > 0.0 else "RETROGRADE"
+
+            def propagate_candidate(candidate_duration):
+                coast_duration = duration_s - 2.0 * candidate_duration
+                segments = [
+                    {**common, "duration_s": candidate_duration, "thrust_n": thrust_n,
+                     "isp_s": isp_s, "thrust_direction": outbound},
+                    {**common, "duration_s": coast_duration},
+                    {**common, "duration_s": candidate_duration, "thrust_n": thrust_n,
+                     "isp_s": isp_s, "thrust_direction": inbound},
+                ]
+                return propagate_schedule(initial, segments, OUTPUT_STEP_SECONDS)
+
+            low = 0.0
+            high = 0.499 * duration_s
+            for _ in range(28):
+                trial = 0.5 * (low + high)
+                candidate_times, candidate_states, _ = propagate_candidate(trial)
+                candidate_phase = orbital_phase_deg(candidate_states)
+                nominal_at_candidate = np.interp(candidate_times, nominal_times, nominal_phase)
+                achieved_signed = wrap_signed_degrees(
+                    candidate_phase[-1] - nominal_at_candidate[-1]
+                )
+                if signed_target > 0.0:
+                    if achieved_signed < signed_target:
+                        low = trial
+                    else:
+                        high = trial
+                else:
+                    if achieved_signed > signed_target:
+                        low = trial
+                    else:
+                        high = trial
+
+            burn_duration = 0.5 * (low + high)
+            times, states, _ = propagate_candidate(burn_duration)
         phase = orbital_phase_deg(states)
         # Segment boundaries can add or remove one output sample relative to the
         # single-segment nominal propagation. Compare the trajectories on the
@@ -86,14 +117,14 @@ def main():
 
     print("Challenge 1, Part B — Orekit")
     print(" satellite | target slot [deg] | achieved slot [deg] | HET burn per arc [h]")
-    for index, (target, history) in enumerate(zip(np.degrees(target_offsets), histories)):
+    for index, (target, history) in enumerate(zip(target_offsets_deg, histories)):
         achieved = history[2][-1]
         print(f" {index:9d} | {target:17.3f} | {achieved:19.3f} | {history[3] / 3600.0:18.3f}")
 
     plt.figure(figsize=(10, 6))
     for index, (times, _, relative, _) in enumerate(histories):
         plt.plot(times / 86400.0, relative, label=f"Satellite {index}")
-    for target in np.degrees(target_offsets):
+    for target in target_offsets_deg:
         plt.axhline(target, linestyle="--", linewidth=0.7)
     plt.xlabel("Time [days]"); plt.ylabel("Relative orbital phase [deg]")
     plt.title("Orekit Finite-Thrust In-Plane Slotting"); plt.grid(True); plt.legend(); plt.tight_layout()

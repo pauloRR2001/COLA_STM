@@ -99,9 +99,13 @@ def calibrate_environment_to_decay_rate(
     area_m2=area_ram_m2,
     spacecraft_mass_kg=mass_kg,
     drag_coefficient=cd,
+    reference_altitude_model_km=400.0,
+    scale_height_km=58.0,
+    calibration_duration_days=1.0,
+    target_final_altitude_km=None,
     apply=True,
 ):
-    """Calibrate the density scale to match a reference altitude-decay rate.
+    """Calibrate the density scale using the Orekit numerical propagator.
 
     The source challenge states that a nominal ram-face spacecraft at 330 km
     should decay at -0.512 km/day during solar maximum.  This function computes
@@ -132,37 +136,73 @@ def calibrate_environment_to_decay_rate(
     """
     global ATMOSPHERIC_DENSITY_SCALE
 
-    base_density = base_atmospheric_density_kg_m3(reference_altitude_km)
-    base_decay_rate = circular_drag_decay_rate_km_per_day(
-        reference_altitude_km,
-        base_density,
-        area_m2=area_m2,
-        spacecraft_mass_kg=spacecraft_mass_kg,
-        drag_coefficient=drag_coefficient,
-    )
+    from functions.orekit import propagate_segment
 
-    if np.isclose(base_decay_rate, 0.0):
-        raise ValueError("Base decay rate is zero; cannot calibrate atmosphere scale.")
-
-    density_scale = target_decay_rate_km_per_day / base_decay_rate
-
-    if density_scale <= 0.0:
-        raise ValueError(
-            "Atmosphere calibration requires target and base decay rates to have "
-            "the same sign."
+    duration_s = float(calibration_duration_days) * seconds_per_day
+    if duration_s <= 0.0:
+        raise ValueError("calibration_duration_days must be positive")
+    if target_final_altitude_km is None:
+        target_final_altitude_km = (
+            reference_altitude_km
+            + target_decay_rate_km_per_day * calibration_duration_days
         )
+
+    radius_km = earth_radius_km + reference_altitude_km
+    speed_km_s = np.sqrt(mu_earth_km3_s2 / radius_km)
+    initial_state = np.array([radius_km, 0.0, 0.0, 0.0, speed_km_s, 0.0])
+
+    def final_mean_sma_altitude(scale):
+        _, states, _ = propagate_segment(
+            initial_state,
+            duration_s,
+            min(3600.0, duration_s),
+            area_m2=area_m2,
+            spacecraft_mass_kg=spacecraft_mass_kg,
+            drag_coefficient=drag_coefficient,
+            rho0_kg_m3=3.5e-12 * scale,
+            reference_altitude_km=reference_altitude_model_km,
+            scale_height_km=scale_height_km,
+        )
+        radius = np.linalg.norm(states[:, :3], axis=1)
+        speed_squared = np.sum(states[:, 3:] ** 2, axis=1)
+        sma_altitude = -mu_earth_km3_s2 / (
+            2.0 * (0.5 * speed_squared - mu_earth_km3_s2 / radius)
+        ) - earth_radius_km
+        tail_count = max(
+            1,
+            int(round(min(seconds_per_day, duration_s) / min(3600.0, duration_s))),
+        )
+        return float(np.mean(sma_altitude[-tail_count:]))
+
+    lower_scale = 0.0
+    upper_scale = 1.0
+    while final_mean_sma_altitude(upper_scale) > target_final_altitude_km:
+        upper_scale *= 2.0
+        if upper_scale > 1.0e6:
+            raise RuntimeError("Unable to bracket Orekit atmosphere calibration")
+
+    for _ in range(24):
+        density_scale = 0.5 * (lower_scale + upper_scale)
+        if final_mean_sma_altitude(density_scale) > target_final_altitude_km:
+            lower_scale = density_scale
+        else:
+            upper_scale = density_scale
+
+    density_scale = 0.5 * (lower_scale + upper_scale)
+    calibrated_final_altitude = final_mean_sma_altitude(density_scale)
+    calibrated_decay_rate = (
+        calibrated_final_altitude - reference_altitude_km
+    ) / calibration_duration_days
 
     if apply:
         ATMOSPHERIC_DENSITY_SCALE = float(density_scale)
 
+    base_density = base_atmospheric_density_kg_m3(reference_altitude_km)
     calibrated_density = density_scale * base_density
-    calibrated_decay_rate = circular_drag_decay_rate_km_per_day(
-        reference_altitude_km,
-        calibrated_density,
-        area_m2=area_m2,
-        spacecraft_mass_kg=spacecraft_mass_kg,
-        drag_coefficient=drag_coefficient,
-    )
+    base_final_altitude = final_mean_sma_altitude(1.0)
+    base_decay_rate = (
+        base_final_altitude - reference_altitude_km
+    ) / calibration_duration_days
 
     return {
         "reference_altitude_km": float(reference_altitude_km),
@@ -172,6 +212,11 @@ def calibrate_environment_to_decay_rate(
         "density_scale": float(density_scale),
         "base_decay_rate_km_per_day": float(base_decay_rate),
         "calibrated_decay_rate_km_per_day": float(calibrated_decay_rate),
+        "target_final_altitude_km": float(target_final_altitude_km),
+        "calibrated_final_altitude_km": float(calibrated_final_altitude),
+        "calibration_duration_days": float(calibration_duration_days),
+        "reference_altitude_model_km": float(reference_altitude_model_km),
+        "scale_height_km": float(scale_height_km),
         "area_m2": float(area_m2),
         "mass_kg": float(spacecraft_mass_kg),
         "cd": float(drag_coefficient),

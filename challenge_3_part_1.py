@@ -22,6 +22,7 @@ from functions import *
 
 
 def main():
+    environment_calibration = calibrate_environment_to_decay_rate()
     spacecraft = create_spacecraft("Challenge 3 Part 1 Spacecraft")
 
     step_s = 10.0
@@ -117,6 +118,7 @@ def main():
             "recovery_complete_h": recovery_complete_h,
             "time_history_s": times_s,
             "time_history_h": times_h,
+            "environment_calibration": environment_calibration,
         }
     )
 
@@ -126,6 +128,14 @@ def main():
     print(f"Nominal drag area:             {area_ram_m2:.2f} m^2")
     print(f"Tumbling drag area:            {area_tumble_m2:.2f} m^2")
     print(f"Drag-area multiplier:          {area_tumble_m2 / area_ram_m2:.2f}")
+    print(
+        "Calibrated density scale:      "
+        f"{environment_calibration['density_scale']:.6f}"
+    )
+    print(
+        "Reference decay rate:          "
+        f"{environment_calibration['calibrated_decay_rate_km_per_day']:.3f} km/day"
+    )
     print("\nState transitions:")
 
     previous_state = None

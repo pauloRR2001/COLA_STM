@@ -210,6 +210,8 @@ def print_transitions(label, result):
 
 
 def main():
+    environment_calibration = calibrate_environment_to_decay_rate()
+
     results = {
         "Nominal": simulate("nominal"),
         "Temporary tumble": simulate("temporary_tumble"),
@@ -268,12 +270,21 @@ def main():
                 == SpacecraftState.MISSION_LOSS,
                 "time_history_s": result.times_s,
                 "time_history_h": result.times_s / 3600.0,
+                "environment_calibration": environment_calibration,
             }
         )
         spacecraft_cases[label] = spacecraft
 
     print("Challenge 3, Part 2")
     print("-------------------")
+    print(
+        "Calibrated density scale: "
+        f"{environment_calibration['density_scale']:.6f}"
+    )
+    print(
+        "Reference decay rate:     "
+        f"{environment_calibration['calibrated_decay_rate_km_per_day']:.3f} km/day"
+    )
     print(f"Propagation duration: {nominal.times_s[-1] / 86400.0:.1f} days")
     print(f"Nominal area:         {area_ram_m2:.2f} m^2")
     print(f"Tumbling area:        {area_tumble_m2:.2f} m^2")

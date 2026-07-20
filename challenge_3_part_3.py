@@ -196,6 +196,8 @@ def evaluate_case(
 
 
 def main():
+    environment_calibration = calibrate_environment_to_decay_rate()
+
     minimum_allowed_altitude_km = 390.0
 
     # A recovery start before the anomaly keeps the spacecraft nominal for this
@@ -244,6 +246,7 @@ def main():
                 "recovered": result.success,
                 "mission_lost": not result.success,
                 "success": result.success,
+                "environment_calibration": environment_calibration,
             }
         )
         spacecraft_cases.append(spacecraft)
@@ -252,10 +255,19 @@ def main():
         "cases": spacecraft_cases,
         "minimum_allowed_altitude_km": minimum_allowed_altitude_km,
         "recovery_start_hours": recovery_start_hours,
+        "environment_calibration": environment_calibration,
     }
 
     print("Challenge 3, Part 3")
     print("-------------------")
+    print(
+        "Calibrated density scale: "
+        f"{environment_calibration['density_scale']:.6f}"
+    )
+    print(
+        "Reference decay rate:     "
+        f"{environment_calibration['calibrated_decay_rate_km_per_day']:.3f} km/day"
+    )
     print(f"Minimum permitted altitude: {minimum_allowed_altitude_km:.1f} km")
     print(f"Number of recovery cases:   {len(results)}")
 
